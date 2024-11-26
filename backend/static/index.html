@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TOTP Manager</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #f4f4f8;
+            --text-primary: #1a1a2e;
+            --accent-color: #4a69bd;
+            --accent-light: #6a89cc;
+            --delete-color: #eb4d4b;
+            --card-bg: white;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px var(--shadow);
+            padding: 2rem;
+        }
+
+        .app-title {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: var(--accent-color);
+            font-weight: 600;
+        }
+
+        .add-token-form {
+            display: flex;
+            margin-bottom: 1.5rem;
+            gap: 0.5rem;
+        }
+
+        .add-token-form input {
+            flex-grow: 1;
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .add-token-form button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .add-token-form button:hover {
+            background-color: var(--accent-light);
+        }
+
+        .token-list {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .token-card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 6px var(--shadow);
+            transition: transform 0.2s ease;
+        }
+
+        .token-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .token-details {
+            flex-grow: 1;
+        }
+
+        .token-name {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: var(--accent-color);
+        }
+
+        .token-code {
+            font-size: 1.5rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        .token-timer {
+            color: #6c757d;
+            font-size: 0.8rem;
+        }
+
+        .delete-btn {
+            background-color: var(--delete-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+
+        .delete-btn:hover {
+            opacity: 0.8;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background-color: var(--accent-color);
+            transition: width 0.5s linear;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="app-title">TOTP Token Manager</h1>
+        
+        <div class="add-token-form">
+            <input type="text" id="token-name" placeholder="Token Name (e.g., Google)">
+            <input type="text" id="token-secret" placeholder="TOTP Secret">
+            <button onclick="addToken()">Add Token</button>
+        </div>
+
+        <div id="tokens-container" class="token-list"></div>
+    </div>
+
+    <script>
+        class TOTPToken {
+            constructor(name, secret) {
+                this.name = name;
+                this.secret = secret;
+                this.code = '';
+                this.timeRemaining = null;
+                this.timerId = null;
+                this.element = null;
+            }
+
+            async fetchCode() {
+                try {
+                    const response = await axios.get(`${window.location.origin}/token/${this.name}`);
+                    this.code = response.data.code;
+                    this.timeRemaining = response.data.timeRemaining
+                    this.updateUI();
+                    this.startTimer();
+                } catch (error) {
+                    console.error(`Error fetching code for ${this.name}:`, error);
+                }
+            }
+
+            startTimer() {
+                // Clear any existing timer
+                if (this.timerId) {
+                    clearInterval(this.timerId);
+                }
+
+                // // Reset timer
+                // this.timeRemaining = 30;
+
+                // Update UI every second
+                this.timerId = setInterval(() => {
+                    this.timeRemaining--;
+                    
+                    // Update progress bar and timer
+                    if (this.element) {
+                        const progressBar = this.element.querySelector('.progress-bar');
+                        const timerSpan = this.element.querySelector('.token-timer');
+                        
+                        if (progressBar) {
+                            progressBar.style.width = `${(this.timeRemaining / 30) * 100}%`;
+                        }
+                        
+                        if (timerSpan) {
+                            timerSpan.textContent = `Expires in: ${this.timeRemaining}s`;
+                        }
+                    }
+
+                    // Fetch new code when timer reaches 0
+                    if (this.timeRemaining <= 0) {
+                        this.fetchCode();
+                    }
+                }, 1000);
+            }
+
+            createUI() {
+                const tokenCard = document.createElement('div');
+                tokenCard.className = 'token-card';
+                tokenCard.innerHTML = `
+                    <div class="token-details">
+                        <div class="token-name">${this.name}</div>
+                        <div class="token-code">${this.code}</div>
+                        <div class="token-timer">Expires in: ${this.timeRemaining}</div>
+                        <div class="progress-bar" style="width: 100%"></div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteToken('${this.name}')">Delete</button>
+                `;
+                return tokenCard;
+            }
+
+            updateUI() {
+                if (!this.element) {
+                    this.element = this.createUI();
+                    document.getElementById('tokens-container').appendChild(this.element);
+                }
+
+                const codeElement = this.element.querySelector('.token-code');
+                if (codeElement) {
+                    codeElement.textContent = this.code;
+                }
+            }
+        }
+
+        class TOTPManager {
+            constructor() {
+                this.tokens = new Map();
+                this.fetchAllTokens();
+            }
+
+            async fetchAllTokens() {
+                try {
+                    const response = await axios.get(`${window.location.origin}/tokens`);
+                    for (const [name, tokenData] of Object.entries(response.data)) {
+                        await this.addToken(name, null, tokenData);
+                    }
+                } catch (error) {
+                    console.error('Error fetching tokens:', error);
+                }
+            }
+
+            async addToken(name, secret, existingTokenData = null) {
+                if (this.tokens.has(name)) return;
+
+                const token = new TOTPToken(name, secret);
+                this.tokens.set(name, token);
+
+                if (existingTokenData) {
+                    // If token already exists, use its data
+                    token.code = existingTokenData.code;
+                    token.timeRemaining = existingTokenData.timeRemaining;
+                    token.updateUI();
+                    token.startTimer();
+                } else {
+                    // If it's a new token, post to backend and fetch code
+                    try {
+                        await axios.post(`${window.location.origin}/add-token`, { name, secret });
+                        await token.fetchCode();
+                    } catch (error) {
+                        this.tokens.delete(name);
+                        alert('Error adding token: ' + (error.response?.data?.detail || 'Unknown error'));
+                    }
+                }
+            }
+
+            async deleteToken(name) {
+                try {
+                    await axios.delete(`${window.location.origin}/token/${name}`);
+                    const token = this.tokens.get(name);
+                    
+                    // Clear timer and remove from DOM
+                    if (token && token.timerId) {
+                        clearInterval(token.timerId);
+                    }
+                    
+                    if (token && token.element) {
+                        token.element.remove();
+                    }
+                    
+                    this.tokens.delete(name);
+                } catch (error) {
+                    alert('Error deleting token: ' + (error.response?.data?.detail || 'Unknown error'));
+                }
+            }
+        }
+
+        const manager = new TOTPManager();
+
+        async function addToken() {
+            const nameInput = document.getElementById('token-name');
+            const secretInput = document.getElementById('token-secret');
+            
+            const name = nameInput.value.trim();
+            const secret = secretInput.value.trim();
+
+            if (name && secret) {
+                await manager.addToken(name, secret);
+                
+                // Clear inputs
+                nameInput.value = '';
+                secretInput.value = '';
+            }
+        }
+
+        async function deleteToken(name) {
+            await manager.deleteToken(name);
+        }
+    </script>
+</body>
+</html>
