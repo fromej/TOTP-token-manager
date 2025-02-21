@@ -1,3 +1,4 @@
+import base64
 import os
 import time
 import sqlite3
@@ -93,7 +94,7 @@ async def list_tokens():
         tokens = cursor.fetchall()
     
     return {
-        name: generate_totp_code(secret)
+        name: generate_totp_code(base64.b32encode(secret.encode()).decode())
         for name, secret in tokens
     }
 
@@ -129,7 +130,7 @@ async def get_token(name: str):
         raise HTTPException(status_code=404, detail="Token not found")
     
     secret = result[0]
-    return generate_totp_code(secret)
+    return generate_totp_code(base64.b32encode(secret.encode()).decode())
 
 if __name__ == "__main__":
     import uvicorn
