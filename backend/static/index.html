@@ -6,6 +6,7 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
+        /* Previous styles remain unchanged */
         :root {
             --bg-primary: #f4f4f8;
             --text-primary: #1a1a2e;
@@ -34,7 +35,7 @@
 
         .container {
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
             background-color: white;
             border-radius: 12px;
             box-shadow: 0 10px 25px var(--shadow);
@@ -49,17 +50,18 @@
         }
 
         .add-token-form {
-            display: flex;
-            margin-bottom: 1.5rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
             gap: 0.5rem;
+            margin-bottom: 1.5rem;
         }
 
         .add-token-form input {
-            flex-grow: 1;
             padding: 0.75rem;
             border: 1px solid #e0e0e0;
             border-radius: 6px;
             font-size: 1rem;
+            min-width: 0;
         }
 
         .add-token-form button {
@@ -70,14 +72,39 @@
             border-radius: 6px;
             cursor: pointer;
             transition: background-color 0.3s ease;
+            white-space: nowrap;
         }
 
         .add-token-form button:hover {
             background-color: var(--accent-light);
         }
 
+        .global-timer {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            border-radius: 6px;
+            overflow: hidden;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+        }
+
+        .timer-text {
+            padding: 0.75rem;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .timer-progress {
+            height: 4px;
+            background-color: var(--accent-color);
+            transition: width 1s linear;
+            width: 100%;
+        }
+
         .token-list {
             display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 1rem;
         }
 
@@ -112,11 +139,6 @@
             letter-spacing: 2px;
         }
 
-        .token-timer {
-            color: #6c757d;
-            font-size: 0.8rem;
-        }
-
         .delete-btn {
             background-color: var(--delete-color);
             color: white;
@@ -125,40 +147,96 @@
             border-radius: 6px;
             cursor: pointer;
             transition: opacity 0.3s ease;
+            margin-left: 1rem;
         }
 
         .delete-btn:hover {
             opacity: 0.8;
         }
 
-        .progress-bar {
-            height: 4px;
-            background-color: var(--accent-color);
-            transition: width 0.5s linear;
+        @media (max-width: 900px) {
+            .token-list {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .add-token-form {
+                grid-template-columns: 1fr;
+            }
+
+            .token-card {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: stretch;
+            }
+
+            .delete-btn {
+                margin-left: 0;
+                align-self: stretch;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="app-title">TOTP Token Manager</h1>
-        
+
         <div class="add-token-form">
             <input type="text" id="token-name" placeholder="Token Name (e.g., Google)">
             <input type="text" id="token-secret" placeholder="TOTP Secret">
             <button onclick="addToken()">Add Token</button>
         </div>
 
+        <div id="global-timer" class="global-timer">
+            <div class="timer-text">Waiting for first token...</div>
+            <div id="timer-progress" class="timer-progress"></div>
+        </div>
+
         <div id="tokens-container" class="token-list"></div>
     </div>
 
     <script>
+        let globalTimer = 0;
+        let globalTimerId = null;
+        let totalTime = 0;
+
+        function startGlobalTimer(initialTimeRemaining) {
+            if (globalTimerId) {
+                clearInterval(globalTimerId);
+            }
+
+            globalTimer = initialTimeRemaining;
+            totalTime = initialTimeRemaining;
+            updateTimerUI();
+
+            globalTimerId = setInterval(() => {
+                globalTimer--;
+                updateTimerUI();
+
+                if (globalTimer <= 0) {
+                    manager.refreshAllTokens();
+                }
+            }, 1000);
+        }
+
+        function updateTimerUI() {
+            if (totalTime === 0) {
+                document.querySelector('.timer-text').textContent = 'Waiting for first token...';
+                document.getElementById('timer-progress').style.width = '0%';
+                return;
+            }
+
+            const percentage = (globalTimer / totalTime) * 100;
+            document.querySelector('.timer-text').textContent = `Tokens refresh in: ${globalTimer}s`;
+            document.getElementById('timer-progress').style.width = `${percentage}%`;
+        }
+
         class TOTPToken {
             constructor(name, secret) {
                 this.name = name;
                 this.secret = secret;
                 this.code = '';
-                this.timeRemaining = null;
-                this.timerId = null;
                 this.element = null;
             }
 
@@ -166,46 +244,16 @@
                 try {
                     const response = await axios.get(`${window.location.origin}/token/${this.name}`);
                     this.code = response.data.code;
-                    this.timeRemaining = response.data.timeRemaining
+
+                    // Update timer with each token fetch
+                    if (response.data.timeRemaining) {
+                        startGlobalTimer(response.data.timeRemaining);
+                    }
+
                     this.updateUI();
-                    this.startTimer();
                 } catch (error) {
                     console.error(`Error fetching code for ${this.name}:`, error);
                 }
-            }
-
-            startTimer() {
-                // Clear any existing timer
-                if (this.timerId) {
-                    clearInterval(this.timerId);
-                }
-
-                // // Reset timer
-                // this.timeRemaining = 30;
-
-                // Update UI every second
-                this.timerId = setInterval(() => {
-                    this.timeRemaining--;
-                    
-                    // Update progress bar and timer
-                    if (this.element) {
-                        const progressBar = this.element.querySelector('.progress-bar');
-                        const timerSpan = this.element.querySelector('.token-timer');
-                        
-                        if (progressBar) {
-                            progressBar.style.width = `${(this.timeRemaining / 30) * 100}%`;
-                        }
-                        
-                        if (timerSpan) {
-                            timerSpan.textContent = `Expires in: ${this.timeRemaining}s`;
-                        }
-                    }
-
-                    // Fetch new code when timer reaches 0
-                    if (this.timeRemaining <= 0) {
-                        this.fetchCode();
-                    }
-                }, 1000);
             }
 
             createUI() {
@@ -215,8 +263,6 @@
                     <div class="token-details">
                         <div class="token-name">${this.name}</div>
                         <div class="token-code">${this.code}</div>
-                        <div class="token-timer">Expires in: ${this.timeRemaining}</div>
-                        <div class="progress-bar" style="width: 100%"></div>
                     </div>
                     <button class="delete-btn" onclick="deleteToken('${this.name}')">Delete</button>
                 `;
@@ -245,11 +291,31 @@
             async fetchAllTokens() {
                 try {
                     const response = await axios.get(`${window.location.origin}/tokens`);
-                    for (const [name, tokenData] of Object.entries(response.data)) {
+                    const entries = Object.entries(response.data);
+
+                    // Update timer if there are any tokens
+                    if (entries.length > 0 && response.data[entries[0][0]].timeRemaining) {
+                        startGlobalTimer(response.data[entries[0][0]].timeRemaining);
+                    }
+
+                    for (const [name, tokenData] of entries) {
                         await this.addToken(name, null, tokenData);
                     }
                 } catch (error) {
                     console.error('Error fetching tokens:', error);
+                }
+            }
+
+            async refreshAllTokens() {
+                const tokens = Array.from(this.tokens.values());
+                if (tokens.length > 0) {
+                    // Fetch the first token to update the timer
+                    await tokens[0].fetchCode();
+
+                    // Then fetch the rest
+                    for (let i = 1; i < tokens.length; i++) {
+                        await tokens[i].fetchCode();
+                    }
                 }
             }
 
@@ -260,13 +326,9 @@
                 this.tokens.set(name, token);
 
                 if (existingTokenData) {
-                    // If token already exists, use its data
                     token.code = existingTokenData.code;
-                    token.timeRemaining = existingTokenData.timeRemaining;
                     token.updateUI();
-                    token.startTimer();
                 } else {
-                    // If it's a new token, post to backend and fetch code
                     try {
                         await axios.post(`${window.location.origin}/add-token`, { name, secret });
                         await token.fetchCode();
@@ -281,17 +343,25 @@
                 try {
                     await axios.delete(`${window.location.origin}/token/${name}`);
                     const token = this.tokens.get(name);
-                    
-                    // Clear timer and remove from DOM
-                    if (token && token.timerId) {
-                        clearInterval(token.timerId);
-                    }
-                    
+
                     if (token && token.element) {
                         token.element.remove();
                     }
-                    
+
                     this.tokens.delete(name);
+
+                    // Reset timer if no tokens remain
+                    if (this.tokens.size === 0) {
+                        if (globalTimerId) {
+                            clearInterval(globalTimerId);
+                            globalTimerId = null;
+                        }
+                        totalTime = 0;
+                        updateTimerUI();
+                    } else {
+                        // If tokens remain, refresh to get new timer
+                        this.refreshAllTokens();
+                    }
                 } catch (error) {
                     alert('Error deleting token: ' + (error.response?.data?.detail || 'Unknown error'));
                 }
@@ -303,14 +373,12 @@
         async function addToken() {
             const nameInput = document.getElementById('token-name');
             const secretInput = document.getElementById('token-secret');
-            
+
             const name = nameInput.value.trim();
             const secret = secretInput.value.trim();
 
             if (name && secret) {
                 await manager.addToken(name, secret);
-                
-                // Clear inputs
                 nameInput.value = '';
                 secretInput.value = '';
             }
